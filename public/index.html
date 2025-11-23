@@ -35,6 +35,7 @@
     html,
     body {
       height: 100%;
+      scroll-behavior: smooth;
     }
 
     body {
@@ -196,6 +197,7 @@
     #osmd-container {
       padding: 16px;
       min-width: 100%;
+       scroll-behavior: smooth;
     }
 
     /* OSMD cursor styling */
@@ -386,6 +388,54 @@
       banner.classList.remove("error");
     }
 
+    // Custom vertical smooth scroll with controllable duration (linear).
+    function smoothScrollToY(targetY, duration = 900) {
+      const startY = window.scrollY || window.pageYOffset;
+      const delta = targetY - startY;
+      const start = performance.now();
+
+      function step(now) {
+        const progress = Math.min((now - start) / duration, 1);
+        window.scrollTo({ top: startY + delta * progress, behavior: "auto" });
+        if (progress < 1) requestAnimationFrame(step);
+      }
+
+      requestAnimationFrame(step);
+    }
+
+    function smoothScrollToElement(el, duration = 900) {
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      smoothScrollToY(rect.top + window.scrollY, duration);
+    }
+
+    // Smoothly scroll a container (e.g., OSMD wrapper) to a target position (linear).
+    let containerScrollAnim = null;
+    function smoothScrollContainerTo(container, targetX, targetY, duration = 15000) {
+      if (!container) return;
+      if (containerScrollAnim) cancelAnimationFrame(containerScrollAnim);
+
+      const startX = container.scrollLeft;
+      const startY = container.scrollTop;
+      const dx = targetX - startX;
+      const dy = targetY - startY;
+      const start = performance.now();
+
+      function step(now) {
+        const progress = Math.min((now - start) / duration, 1);
+        container.scrollTo({
+          left: startX + dx * progress,
+          top: startY + dy * progress,
+          behavior: "auto",
+        });
+        if (progress < 1) {
+          containerScrollAnim = requestAnimationFrame(step);
+        }
+      }
+
+      containerScrollAnim = requestAnimationFrame(step);
+    }
+
     const midiNames = [
       "C",
       "C#",
@@ -420,6 +470,7 @@
       { label: "Ode to Joy", path: "scores/ode-to-joy.mxl" },
       { label: "Für Elise (Kids Class)", path: "scores/fur-elise-kids-class.mxl" },
       { label: "Rain Rain Go Away", path: "scores/rain-rain-go-away-the-countdown-kids-rain-rain-go-away-piano-3-levels.mxl" },
+      { label: "Tonleiter", path: "scores/tonleiter.mxl" },
     ];
 
     // --- Renderer (OSMD) ---
@@ -445,7 +496,8 @@
           drawLyricist: false,
           drawCredits: false,
           engravingFontFamily: "Bravura",
-          renderSingleHorizontalStaffline: true,
+          drawPartNames: false,
+          //renderSingleHorizontalStaffline: true,
         };
 
         this.osmd = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(
@@ -462,18 +514,17 @@
         if (document.fonts?.ready) {
           await document.fonts.ready;
         }
-        
-        this.osmd.Zoom = 1.2; // 150%
-        await this.osmd.render();
+
+    //    await this.osmd.render();
       
-        this.svg = this.container.querySelector("svg");
+/*         this.svg = this.container.querySelector("svg");
 
          if (this.svg) {
           this.svg.style.width = "auto";
           this.svg.style.height = "auto";
-        } 
+        }  */
 
-        // 2. Content-Höhe bestimmen
+/*         // 2. Content-Höhe bestimmen
         const bbox = this.svg.getBBox();
         const contentHeight = bbox.height*2;
         console.log(contentHeight);
@@ -481,10 +532,10 @@
         const wrapperHeight = wrapper.clientHeight;
         console.log(wrapperHeight);
         // 3. Zoom-Faktor berechnen (kleinen Rand lassen, z. B. 95%)
-        const targetZoom = 1; //(wrapperHeight / contentHeight) * 0.95;
+        const targetZoom = (wrapperHeight / contentHeight) * 0.95;
 
         // 4. Zoom setzen und nochmal rendern
-        this.osmd.Zoom = targetZoom;
+        this.osmd.Zoom = targetZoom; */
         await this.osmd.render();
         log("Score rendered.");
       }
@@ -529,10 +580,10 @@
         this.onPitch = onPitch;
         this.startCtxTime = 0;
         this.pauseCtxTime = null;
-        this.MIN_RMS = 0.005; // lower threshold to catch softer tones
-        this.MIN_CLARITY = 0.6; // allow slightly noisier detections
+        this.MIN_RMS = 0.012; // slightly higher to ignore background noise
+        this.MIN_CLARITY = 0.7; // require clearer pitch to avoid double triggers
         this.lastEvalTime = 0;
-        this.evalInterval = 0.08; // seconds
+        this.evalInterval = 0.2; // 0.08 seconds
         this.loopId = null;
         this.buf = null;
         this._tick = null;
@@ -683,6 +734,7 @@
     const scoreSelect = document.getElementById("score-select");
     const startScreen = document.getElementById("start-screen");
     const scoreShell = document.getElementById("score-shell");
+    const scoreWrapper = document.getElementById("score-wrapper");
     const pauseOverlay = document.getElementById("pause-overlay");
     const backBtn = document.getElementById("back-btn");
     const resumeBtn = document.getElementById("resume-btn");
@@ -690,6 +742,9 @@
     const endSummary = document.getElementById("end-summary");
     const endBackBtn = document.getElementById("end-back-btn");
     const endRepeatBtn = document.getElementById("end-repeat-btn");
+
+    // Debounce repeated detections of the same pitch (seconds).
+    const DETECTION_DEBOUNCE_SECONDS = 0.18;
 
     let audioEngine = null;
     let isPaused = false;
@@ -699,6 +754,9 @@
     let totalNotes = 0;
     let correctNotes = 0;
     let selectedScorePath = SCORE_FILES[0].path;
+    let measureBeatTypes = [];
+    let lastDetectedMidi = null;
+    let lastDetectedTime = 0;
 
     function clampBpm(val) {
       return Math.max(40, Math.min(200, val || 90));
@@ -718,22 +776,22 @@
     }
 
     const FINGER_LABELS = {
-      A2: "4",
-      H2: "3",
-      C3: "5",
-      D3: "4",
-      E3: "3",
-      F3: "2",
-      G3: "1",
-      A3: "1",
-      H3: "2",
-      C4: "1",
-      D4: "2",
-      E4: "3",
-      F4: "4",
-      G4: "5",
-      A4: "5",
-      H4: "4",
+      A2: "A2",
+      H2: "H2",
+      C3: "C3",
+      D3: "D3",
+      E3: "E3",
+      F3: "F3",
+      G3: "G3",
+      A3: "A3",
+      H3: "H3",
+      C4: "C4",
+      D4: "D4",
+      E4: "E4",
+      F4: "F4",
+      G4: "G4",
+      A4: "A4",
+      H4: "H4",
     };
 
     function annotateNoteNames(osmd) {
@@ -922,28 +980,62 @@ function startCursorLoop(bpm, resetPosition = true) {
   stopCursorLoop(false);
 
   const clampedBpm = clampBpm(bpm);
-  const beatMs = 60000 / clampedBpm; // Dauer einer Viertelnote in ms
-
-  cursor.show();
-  if (resetPosition) {
-    cursor.reset();
+  // Duration of the user-entered beat; actual quarter duration depends on meter.
+  const baseBeatMs = 60000 / clampedBpm;
+  function getCurrentBeatType() {
+    const iterator = cursor?.iterator;
+    const measureIndex =
+      iterator?.CurrentMeasureIndex ??
+      (iterator?.CurrentSourceMeasure?.MeasureNumber != null
+        ? iterator.CurrentSourceMeasure.MeasureNumber - 1
+        : null);
+    if (
+      Array.isArray(measureBeatTypes) &&
+      measureIndex != null &&
+      measureBeatTypes[measureIndex] != null
+    ) {
+      return measureBeatTypes[measureIndex] || 4;
+    }
+    return measureBeatTypes?.[0] || 4;
+  }
+  function getQuarterNoteMs() {
+    const beatType = getCurrentBeatType(); // e.g., 4 in 4/4, 8 in 3/8
+    const factor = beatType / 4; // how many "entered beats" make one quarter
+    return baseBeatMs * factor;
   }
 
-  // Style cursor element and inner bar
-  const cursorEl = cursor.cursorElement;
-  if (cursorEl) {
-    cursorEl.style.transition =
-      "left 120ms linear, top 120ms linear, height 120ms linear";
-    cursorEl.style.stroke = "red";
-    cursorEl.style.strokeWidth = "2px";
-    cursorEl.style.opacity = "0.8";
-    const rect = cursorEl.querySelector("rect");
-    if (rect) {
-      rect.setAttribute("fill", "red");
-      rect.setAttribute("width", "3");
-      rect.setAttribute("rx", "2");
-      rect.setAttribute("opacity", "0.9");
-    }
+   if (resetPosition) {
+    cursor.reset();
+   }
+    cursor.show();
+    // Style cursor element and inner bar
+    const cursorEl = cursor.cursorElement;
+    console.log(cursorEl);
+    if (cursorEl) {
+  /*     cursorEl.style.transition =
+        "left 120ms linear, top 120ms linear, height 120ms linear"; */
+      cursorEl.style.stroke = "red";
+      cursorEl.style.strokeWidth = "2px";
+      cursorEl.style.opacity = "0.8";
+      const rect = cursorEl.querySelector("rect");
+      if (rect) {
+        rect.setAttribute("fill", "red");
+        rect.setAttribute("width", "3");
+        rect.setAttribute("rx", "2");
+        rect.setAttribute("opacity", "0.9");
+      }
+  }
+
+  function ensureCursorVisibleSmooth(duration = 3400) {
+    if (!cursorEl || !scoreWrapper) return;
+    const animMs = Math.max(50, duration); // keep a minimum to avoid jumps
+    const contRect = scoreWrapper.getBoundingClientRect();
+    const curRect = cursorEl.getBoundingClientRect();
+    const targetLeft =
+      curRect.left - contRect.left + scoreWrapper.scrollLeft - contRect.width * 0.3;
+    const maxLeft = scoreWrapper.scrollWidth - contRect.width;
+    const clampedLeft = Math.max(0, Math.min(maxLeft, targetLeft));
+    smoothScrollContainerTo(scoreWrapper, clampedLeft, scoreWrapper.scrollTop, animMs);
   }
 
   /**
@@ -986,13 +1078,13 @@ function startCursorLoop(bpm, resetPosition = true) {
     // nehmen wir einfach eine Achtel als Fallback.
     if (!isFinite(minWhole)) {
       const fallbackDeltaQuarters = 0.5; // Achtel = 0.5 Viertelnoten
-      return fallbackDeltaQuarters * beatMs;
+      return fallbackDeltaQuarters * getQuarterNoteMs();
     }
 
     // minWhole ist ein Bruchteil einer GANZEN Note.
     // Ganze Note = 4 Viertel → * 4, um auf Viertelnoten zu kommen.
     const deltaQuarters = minWhole * 4;
-    const stepMs = deltaQuarters * beatMs;
+    const stepMs = deltaQuarters * getQuarterNoteMs();
 
     return stepMs;
   }
@@ -1009,6 +1101,7 @@ function startCursorLoop(bpm, resetPosition = true) {
     updateExpectedFromCursor();
 
     const stepMs = getCurrentStepDurationMs();
+    ensureCursorVisibleSmooth(stepMs);
 
     // Sicherheitsnetz: wenn stepMs <= 0 rauskommt, direkt weiterspringen,
     // damit wir nicht hängen bleiben.
@@ -1025,6 +1118,7 @@ function startCursorLoop(bpm, resetPosition = true) {
     cursorIntervalId = window.setTimeout(() => {
       // Beim Ablauf des Timers EINEN Schritt weiter
       cursor.next();
+      ensureCursorVisibleSmooth(stepMs);
 
       if (!cursor.iterator?.endReached) {
         scheduleNextStep();
@@ -1112,11 +1206,22 @@ function startCursorLoop(bpm, resetPosition = true) {
 
       if (!currentExpected || currentExpected.isRest || info.skipped || !info.midi) return;
 
+      const now = info?.time ?? performance.now() / 1000;
+      if (
+        lastDetectedMidi != null &&
+        Math.abs(info.midi - lastDetectedMidi) <= 0.5 &&
+        now - lastDetectedTime < DETECTION_DEBOUNCE_SECONDS
+      ) {
+        return; // suppress rapid double-detections of the same pitch
+      }
+
       const midiDiff = Math.abs(info.midi - currentExpected.midi);
       const isCorrect = midiDiff <= 0.5; // allow slight detune (~50 cents)
       if (!currentExpected.hit && isCorrect) {
         correctNotes += 1;
         currentExpected.hit = true;
+        lastDetectedMidi = info.midi;
+        lastDetectedTime = now;
       }
       renderMarker(currentExpected, isCorrect);
     }
@@ -1161,6 +1266,8 @@ function startCursorLoop(bpm, resetPosition = true) {
       try {
         await renderer.loadAndRender(xmlForLoad || demoBuffer);
         annotateNoteNames(renderer.osmd);
+        const measures = renderer.osmd?.sheet?.SourceMeasures ?? [];
+        measureBeatTypes = measures.map((m) => m?.ActiveTimeSignature?.Denominator ?? 4);
       } catch (err) {
         showError(`OSMD-Ladefehler: ${err.message}`);
         startBtn.disabled = false;
@@ -1227,6 +1334,8 @@ function startCursorLoop(bpm, resetPosition = true) {
       endScreen.style.display = "none";
       totalNotes = 0;
       correctNotes = 0;
+      lastDetectedMidi = null;
+      lastDetectedTime = 0;
 
       stopCursorLoop();
       audioEngine?.stop();
@@ -1270,7 +1379,7 @@ function startCursorLoop(bpm, resetPosition = true) {
 
     endBackBtn.addEventListener("click", () => {
       stopApp();
-      startScreen.scrollIntoView({ behavior: "smooth", block: "start" });
+      smoothScrollToElement(startScreen, 1200);
     });
 
     endRepeatBtn.addEventListener("click", () => {
