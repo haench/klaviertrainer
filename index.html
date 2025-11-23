@@ -1,0 +1,1270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Piano Tutor – OSMD + Mic Pitch</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    /* Load SMuFL fonts locally for reliable glyph rendering. */
+    @font-face {
+      font-family: "Bravura";
+      src: url("./fonts/Bravura.otf") format("opentype");
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Bravura Text";
+      src: url("./fonts/BravuraText.otf") format("opentype");
+      font-display: swap;
+    }
+
+    :root {
+      --bg: #f7f7f9;
+      --panel: #ffffff;
+      --accent: #4caf50;
+      --accent-2: #1976d2;
+      --text: #1f1f23;
+      --muted: #666;
+      --border: #ddd;
+      --error: #d32f2f;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    #app {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    #start-screen {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 40px);
+      text-align: center;
+    }
+
+    #start-screen h1 {
+      margin: 0;
+      font-size: 28px;
+      color: var(--text);
+    }
+
+    .start-controls {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .start-controls label {
+      font-size: 16px;
+      color: var(--text);
+    }
+
+    .start-controls select {
+      padding: 10px 12px;
+      font-size: 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .start-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: center;
+    }
+
+    button.primary {
+      background: var(--accent-2);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button.big {
+      font-size: 22px;
+      padding: 14px 28px;
+    }
+
+    button.secondary {
+      background: #e0e0e0;
+      color: var(--text);
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    #status-line {
+      font-size: 14px;
+      color: var(--muted);
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #status-line span {
+      min-width: 120px;
+    }
+
+    #status-panel {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      flex-wrap: wrap;
+    }
+
+    #status-panel .controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    #banner {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 6px;
+      display: none;
+    }
+
+    #banner.error {
+      display: block;
+      background: #fdecea;
+      color: var(--error);
+      border: 1px solid #f5c6cb;
+    }
+
+    #score-shell {
+      margin-top: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      width: 100%;
+      position: relative;
+    }
+
+    #score-wrapper {
+      position: relative;
+      min-height: 300px;
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: auto;
+      background: #fff;
+      width: 100%;
+    }
+
+    #osmd-container {
+      padding: 16px;
+      min-width: 100%;
+    }
+
+    /* OSMD cursor styling */
+    /* Outer cursor group */
+    #osmd-container svg .cursor {
+      background: transparent !important;
+      z-index: 9999 !important;
+    }
+    /* Inner bar (OSMD uses a rect inside .cursor; include .cursor-internal just in case) */
+    #osmd-container svg .cursor rect,
+    #osmd-container svg .cursor-internal {
+      fill: red !important;
+      background-color: red !important;
+      width: 3px !important;
+      border-radius: 2px;
+      opacity: 0.9;
+      transition: left 120ms linear, top 120ms linear, height 120ms linear;
+    }
+
+    #pause-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      color: #fff;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      z-index: 10;
+      text-align: center;
+    }
+
+    #pause-overlay h2 {
+      margin: 0;
+      font-size: 32px;
+      letter-spacing: 0.08em;
+    }
+
+    #pause-overlay .overlay-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    #pause-overlay .overlay-buttons button {
+      padding: 14px 24px;
+      font-size: 18px;
+      min-width: 120px;
+      border-radius: 8px;
+    }
+
+    #end-screen {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 40px);
+      text-align: center;
+    }
+
+    #end-screen h2 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    #end-screen .summary {
+      font-size: 18px;
+      color: var(--text);
+    }
+
+    #end-screen .end-buttons {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    #end-screen .end-buttons button {
+      padding: 14px 24px;
+      font-size: 18px;
+      min-width: 140px;
+      border-radius: 8px;
+    }
+
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://unpkg.com/opensheetmusicdisplay@1.9.2/build/opensheetmusicdisplay.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div id="start-screen">
+      <h1>Schwarzendahls Klaviertrainer</h1>
+      <div class="start-controls">
+        <div class="start-group">
+          <label for="bpm-select">BPM</label>
+          <select id="bpm-select">
+            <option value="40">40</option>
+            <option value="50">50</option>
+            <option value="60" selected>60</option>
+            <option value="70">70</option>
+            <option value="80">80</option>
+            <option value="90">90</option>
+          </select>
+        </div>
+        <div class="start-group">
+          <label for="score-select">Stück</label>
+          <select id="score-select"></select>
+        </div>
+        <button id="start-btn" class="primary big">Start</button>
+      </div>
+    </div>
+
+    <section id="score-shell" style="display: none">
+      <div id="banner" class="error"></div>
+      <div id="status-panel" style="display: none">
+        <div id="status-line">
+          <span id="status-expected">Expected: –</span>
+          <span id="status-detected">Detected: –</span>
+          <span id="status-level">Level: –</span>
+        </div>
+        <div class="controls">
+          <button id="pause-btn" class="secondary" disabled>Pause</button>
+          <button id="stop-btn" class="secondary" disabled>Stop</button>
+        </div>
+      </div>
+
+      <div id="score-wrapper">
+        <div id="osmd-container"></div>
+      </div>
+
+      <div id="pause-overlay">
+        <h2>PAUSE</h2>
+        <div class="overlay-buttons">
+          <button id="back-btn" class="secondary">ZURÜCK</button>
+          <button id="resume-btn" class="primary">WEITER</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="end-screen">
+      <h2>Glückwunsch, du hast …</h2>
+      <div class="summary" id="end-summary">0 von 0 Noten richtig gespielt.</div>
+      <div class="end-buttons">
+        <button id="end-back-btn" class="secondary">ZURÜCK</button>
+        <button id="end-repeat-btn" class="primary">NOCHMAL</button>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+    import { PitchDetector } from "https://esm.sh/pitchy@4";
+
+    // --- Utilities ---
+    function log(msg) {
+      const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+      console.log(`[${ts}] ${msg}`);
+    }
+
+    const banner = document.getElementById("banner");
+
+    function showError(msg) {
+      banner.textContent = msg;
+      banner.classList.add("error");
+      banner.style.display = "block";
+      log(`ERROR: ${msg}`);
+    }
+
+    function clearError() {
+      banner.style.display = "none";
+      banner.textContent = "";
+      banner.classList.remove("error");
+    }
+
+    const midiNames = [
+      "C",
+      "C#",
+      "D",
+      "D#",
+      "E",
+      "F",
+      "F#",
+      "G",
+      "G#",
+      "A",
+      "A#",
+      "H",
+    ];
+
+    function midiToName(midi) {
+      const note = midiNames[midi % 12];
+      const octave = Math.floor(midi / 12) - 1;
+      return `${note}${octave}`;
+    }
+
+    function noteNameToMidi(step, octave) {
+      const baseMap = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+      const base = baseMap[step.toUpperCase()] ?? 0;
+      return 12 * (octave + 1) + base;
+    }
+
+    // --- Score files ---
+    const SCORE_FILES = [
+      { label: "Ode to Joy (Novice)", path: "scores/ode-to-joy-beethoven-novice-garageband-version.mxl" },
+      { label: "Ode to Joy (Kids)", path: "scores/ode-to-joy-piano-for-kids.mxl" },
+      { label: "Ode to Joy", path: "scores/ode-to-joy.mxl" },
+      { label: "Für Elise (Kids Class)", path: "scores/fur-elise-kids-class.mxl" },
+      { label: "Rain Rain Go Away", path: "scores/rain-rain-go-away-the-countdown-kids-rain-rain-go-away-piano-3-levels.mxl" },
+    ];
+
+    // --- Renderer (OSMD) ---
+    class Renderer {
+      constructor(containerId) {
+        this.container = document.getElementById(containerId);
+        this.osmd = null;
+        this.svg = null;
+      }
+
+      async init() {
+        if (this.osmd) return;
+
+        const options = {
+          autoResize: true,
+          drawingParameters: "default",
+          backend: "svg",
+          pageFormat: "Endless",
+          followCursor: true,
+          drawTitle: false,
+          drawSubtitle: false,
+          drawComposer: false,
+          drawLyricist: false,
+          drawCredits: false,
+          engravingFontFamily: "Bravura",
+          renderSingleHorizontalStaffline: true,
+        };
+
+        this.osmd = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(
+          this.container,
+          options
+        );
+
+      }
+
+      async loadAndRender(xmlOrBuf) {
+        await this.osmd.load(xmlOrBuf);
+        
+        // Ensure music fonts are loaded before rendering
+        if (document.fonts?.ready) {
+          await document.fonts.ready;
+        }
+        
+        this.osmd.Zoom = 1.2; // 150%
+        await this.osmd.render();
+      
+        this.svg = this.container.querySelector("svg");
+
+         if (this.svg) {
+          this.svg.style.width = "auto";
+          this.svg.style.height = "auto";
+        } 
+
+        // 2. Content-Höhe bestimmen
+        const bbox = this.svg.getBBox();
+        const contentHeight = bbox.height*2;
+        console.log(contentHeight);
+        const wrapper = document.querySelector("#score-wrapper");
+        const wrapperHeight = wrapper.clientHeight;
+        console.log(wrapperHeight);
+        // 3. Zoom-Faktor berechnen (kleinen Rand lassen, z. B. 95%)
+        const targetZoom = (wrapperHeight / contentHeight) * 0.95;
+
+        // 4. Zoom setzen und nochmal rendern
+        this.osmd.Zoom = targetZoom;
+        await this.osmd.render();
+        log("Score rendered.");
+      }
+
+      getSvg() {
+        return this.svg;
+      }
+    }
+
+    // --- Marker Renderer ---
+    function renderMarker(targetNote, isCorrect) {
+      if (!targetNote?.svgElement) return;
+
+      const svgRoot = document.querySelector("#osmd-container svg");
+      if (!svgRoot) return;
+
+      const bbox = targetNote.svgElement.getBBox();
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y - 12;
+
+      const circle = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle"
+      );
+      circle.setAttribute("cx", cx.toString());
+      circle.setAttribute("cy", cy.toString());
+      circle.setAttribute("r", "6");
+      circle.setAttribute("fill", isCorrect ? "green" : "red");
+      circle.setAttribute("opacity", "0.85");
+
+      svgRoot.appendChild(circle);
+    }
+
+    // --- Audio Engine ---
+    class AudioEngine {
+      constructor(onPitch) {
+        this.ctx = null;
+        this.mediaStream = null;
+        this.sourceNode = null;
+        this.analyser = null;
+        this.pitchDetector = null;
+        this.onPitch = onPitch;
+        this.startCtxTime = 0;
+        this.pauseCtxTime = null;
+        this.MIN_RMS = 0.005; // lower threshold to catch softer tones
+        this.MIN_CLARITY = 0.6; // allow slightly noisier detections
+        this.lastEvalTime = 0;
+        this.evalInterval = 0.08; // seconds
+        this.loopId = null;
+        this.buf = null;
+        this._tick = null;
+      }
+
+      getCurrentTime() {
+        return this.ctx ? this.ctx.currentTime - this.startCtxTime : 0;
+      }
+
+      async start() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        await this.ctx.resume();
+
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        this.sourceNode = this.ctx.createMediaStreamSource(this.mediaStream);
+
+        const bufferSize = 2048;
+        this.analyser = this.ctx.createAnalyser();
+        this.analyser.fftSize = bufferSize;
+        this.analyser.smoothingTimeConstant = 0;
+
+        this.pitchDetector = PitchDetector.forFloat32Array(bufferSize);
+        this.buf = new Float32Array(bufferSize);
+
+        this.startCtxTime = this.ctx.currentTime;
+        this.lastEvalTime = 0;
+
+        this.sourceNode.connect(this.analyser);
+
+        // Keep graph alive without audible output
+        const silentGain = this.ctx.createGain();
+        silentGain.gain.value = 0;
+        this.analyser.connect(silentGain);
+        silentGain.connect(this.ctx.destination);
+
+        this._tick = () => {
+          const now = this.ctx.currentTime - this.startCtxTime;
+
+          if (now - this.lastEvalTime >= this.evalInterval) {
+            this.lastEvalTime = now;
+            this.analyser.getFloatTimeDomainData(this.buf);
+
+            let rms = 0;
+            let peak = 0;
+
+            for (let i = 0; i < this.buf.length; i++) {
+              const v = this.buf[i];
+              rms += v * v;
+              if (Math.abs(v) > peak) peak = Math.abs(v);
+            }
+            rms = Math.sqrt(rms / this.buf.length);
+
+            const [freq, clarity] = this.pitchDetector.findPitch(
+              this.buf,
+              this.ctx.sampleRate
+            );
+
+            if (rms < this.MIN_RMS || !freq || clarity < this.MIN_CLARITY) {
+              this.onPitch?.({
+                time: now,
+                skipped: true,
+                clarity,
+                rms,
+                peak,
+              });
+            } else {
+              const midi = Math.round(
+                69 + 12 * Math.log2(freq / 440)
+              );
+              this.onPitch?.({
+                time: now,
+                freq,
+                clarity,
+                rms,
+                peak,
+                midi,
+                note: midiToName(midi),
+              });
+            }
+          }
+
+          this.loopId = requestAnimationFrame(this._tick);
+        };
+
+        this.loopId = requestAnimationFrame(this._tick);
+        log("Audio started.");
+      }
+
+      stop() {
+        if (this.loopId) cancelAnimationFrame(this.loopId);
+        this.loopId = null;
+        this.pauseCtxTime = null;
+
+        if (this.analyser) this.analyser.disconnect();
+        if (this.sourceNode) this.sourceNode.disconnect();
+        if (this.mediaStream)
+          this.mediaStream.getTracks().forEach((t) => t.stop());
+
+        this.analyser = null;
+        this.sourceNode = null;
+        this.mediaStream = null;
+
+        log("Audio stopped.");
+      }
+
+      pause() {
+        if (this.loopId) cancelAnimationFrame(this.loopId);
+        this.loopId = null;
+        if (this.ctx?.state === "running") {
+          this.pauseCtxTime = this.ctx.currentTime;
+          this.ctx.suspend();
+        }
+      }
+
+      async resume() {
+        if (!this.ctx) return;
+        if (this.ctx.state === "suspended") {
+          const pausedNow = this.ctx.currentTime;
+          if (this.pauseCtxTime != null) {
+            const pausedDur = pausedNow - this.pauseCtxTime;
+            this.startCtxTime += pausedDur;
+            this.lastEvalTime += pausedDur;
+          }
+          this.pauseCtxTime = null;
+          await this.ctx.resume();
+        }
+        if (!this.loopId && this._tick) {
+          this.loopId = requestAnimationFrame(this._tick);
+        }
+      }
+    }
+
+    // --- App wiring ---
+    const renderer = new Renderer("osmd-container");
+
+    const statusExpected = document.getElementById("status-expected");
+    const statusDetected = document.getElementById("status-detected");
+    const statusLevel = document.getElementById("status-level");
+    const startBtn = document.getElementById("start-btn");
+    const pauseBtn = document.getElementById("pause-btn");
+    const stopBtn = document.getElementById("stop-btn");
+    const bpmInput = document.getElementById("bpm-select");
+    const scoreSelect = document.getElementById("score-select");
+    const startScreen = document.getElementById("start-screen");
+    const scoreShell = document.getElementById("score-shell");
+    const pauseOverlay = document.getElementById("pause-overlay");
+    const backBtn = document.getElementById("back-btn");
+    const resumeBtn = document.getElementById("resume-btn");
+    const endScreen = document.getElementById("end-screen");
+    const endSummary = document.getElementById("end-summary");
+    const endBackBtn = document.getElementById("end-back-btn");
+    const endRepeatBtn = document.getElementById("end-repeat-btn");
+
+    let audioEngine = null;
+    let isPaused = false;
+    let cursorIntervalId = null;
+    let cursor = null;
+    let currentExpected = null;
+    let totalNotes = 0;
+    let correctNotes = 0;
+    let selectedScorePath = SCORE_FILES[0].path;
+
+    function clampBpm(val) {
+      return Math.max(40, Math.min(200, val || 90));
+    }
+
+    function populateScoreSelect() {
+      if (!scoreSelect) return;
+      scoreSelect.innerHTML = "";
+      SCORE_FILES.forEach((entry, idx) => {
+        const opt = document.createElement("option");
+        opt.value = entry.path;
+        opt.textContent = entry.label;
+        if (idx === 0) opt.selected = true;
+        scoreSelect.appendChild(opt);
+      });
+      selectedScorePath = scoreSelect.value;
+    }
+
+    const FINGER_LABELS = {
+      A2: "4",
+      H2: "3",
+      C3: "5",
+      D3: "4",
+      E3: "3",
+      F3: "2",
+      G3: "1",
+      A3: "1",
+      H3: "2",
+      C4: "1",
+      D4: "2",
+      E4: "3",
+      F4: "4",
+      G4: "5",
+      A4: "5",
+      H4: "4",
+    };
+
+    function annotateNoteNames(osmd) {
+      const svgRoot = document.querySelector("#osmd-container svg");
+      const cursor = osmd?.cursor;
+      if (!svgRoot || !cursor || !cursor.GNotesUnderCursor) return;
+
+      const seen = new Set();
+      cursor.reset();
+
+      const placeLabels = () => {
+        const gnotes = cursor.GNotesUnderCursor() ?? [];
+        for (const gn of gnotes) {
+          const el = gn?.getSVGGElement?.();
+          const pitch = gn?.sourceNote?.Pitch;
+          if (!el || !pitch) continue;
+          if (seen.has(el)) continue;
+
+          const midi =
+            pitch.halfTone ??
+            pitch.HalfTone ??
+            12 * ((pitch.Octave ?? pitch.octave ?? 0) + 1) +
+              (pitch.Semitones ??
+                pitch.semitones ??
+                pitch.FundamentalNote ??
+                pitch.fundamentalNote ??
+                0);
+          const name = midiToName(midi);
+          const label = (name && FINGER_LABELS[name.toUpperCase()]) || name;
+
+          const bbox = el.getBBox();
+          const text = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "text"
+          );
+          text.setAttribute("x", (bbox.x + bbox.width / 2).toString());
+          text.setAttribute("y", (bbox.y + bbox.height + 14).toString());
+          text.setAttribute("text-anchor", "middle");
+          text.setAttribute("font-size", "10");
+          text.setAttribute("fill", "red");
+          text.textContent = label;
+          svgRoot.appendChild(text);
+
+          seen.add(el);
+        }
+      };
+
+      // Iterate through the score once to place labels
+      placeLabels();
+      while (!cursor.iterator?.endReached) {
+        cursor.next();
+        placeLabels();
+      }
+      cursor.reset();
+    }
+
+    function updateExpectedFromCursor() {
+      const notes = renderer.osmd?.cursor?.NotesUnderCursor?.() ?? [];
+      const gnotes = renderer.osmd?.cursor?.GNotesUnderCursor?.() ?? [];
+      if (!notes.length) {
+        currentExpected = null;
+        updateExpectedLabel(null);
+        return;
+      }
+
+      // Prefer the first non-rest note; otherwise mark as rest.
+      const firstPitch = notes.find((n) => n?.Pitch)?.Pitch;
+      if (!firstPitch) {
+        currentExpected = { isRest: true, midi: null, noteName: "Rest", octave: null };
+        updateExpectedLabel(currentExpected);
+        return;
+      }
+
+      // OSMD Pitch exposes properties like halfTone, fundamentalNote, octave, Step.
+      const midiFromHalfTone =
+        firstPitch.halfTone ??
+        firstPitch.HalfTone ??
+        null;
+      const semitones = firstPitch.Semitones ?? firstPitch.semitones ?? firstPitch.FundamentalNote ?? firstPitch.fundamentalNote ?? 0;
+      const octaveVal = firstPitch.Octave ?? firstPitch.octave ?? 4;
+      const midi =
+        midiFromHalfTone != null
+          ? midiFromHalfTone
+          : 12 * (octaveVal + 1) + semitones;
+      const name = midi != null ? midiToName(midi) : "Rest";
+      const match = name.match(/^([A-G]#?)(-?\d+)$/);
+      const simpleName = match ? match[1] : (firstPitch.Step ?? firstPitch.step ?? "C");
+      const octave = match ? Number(match[2]) : octaveVal;
+
+      const svgEl =
+        gnotes.find((g) => g?.getSVGGElement?.())?.getSVGGElement?.() || null;
+
+      currentExpected = {
+        isRest: false,
+        midi,
+        noteName: simpleName,
+        octave,
+        svgElement: svgEl,
+        hit: false,
+      };
+      totalNotes += 1;
+      updateExpectedLabel(currentExpected);
+    }
+
+    function stopCursorLoop(hide = true) {
+      if (cursorIntervalId) {
+        clearInterval(cursorIntervalId);
+        cursorIntervalId = null;
+      }
+      if (hide && cursor?.hide) cursor.hide();
+      currentExpected = null;
+    }
+
+    function pauseCursorLoop() {
+      if (cursorIntervalId) {
+        clearInterval(cursorIntervalId);
+        cursorIntervalId = null;
+      }
+    }
+
+    function enterPauseOverlay() {
+      if (!audioEngine) return;
+      pauseCursorLoop();
+      audioEngine.pause();
+      pauseBtn.textContent = "Resume";
+      isPaused = true;
+      pauseOverlay.style.display = "flex";
+    }
+
+    function exitPauseOverlay() {
+      if (!audioEngine) return;
+      startCursorLoop(clampBpm(Number(bpmInput.value)), false);
+      audioEngine.resume();
+      pauseBtn.textContent = "Pause";
+      isPaused = false;
+      pauseOverlay.style.display = "none";
+    }
+
+    function showEndScreen() {
+      pauseOverlay.style.display = "none";
+      scoreShell.style.display = "none";
+      endScreen.style.display = "flex";
+      stopBtn.disabled = true;
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = "Pause";
+      isPaused = false;
+      if (audioEngine) {
+        audioEngine.stop();
+      }
+      const total = Math.max(totalNotes, 0);
+      const correct = Math.max(correctNotes, 0);
+      endSummary.textContent = `${correct} von ${total} Noten richtig gespielt.`;
+    }
+
+    // old curosr loop:
+/*     function startCursorLoop(bpm, resetPosition = true) {
+      if (!renderer.osmd?.cursor) return;
+      cursor = renderer.osmd.cursor;
+      stopCursorLoop(false);
+      if (resetPosition) {
+        cursor.reset();
+      }
+      cursor.show();
+      const cursorEl = cursor.cursorElement;
+      if (cursorEl) {
+        cursorEl.style.transition =
+          "left 200ms linear, top 200ms linear, height 200ms linear";
+      }
+      updateExpectedFromCursor();
+      const stepMs = 60000 / clampBpm(bpm);
+      cursorIntervalId = setInterval(() => {
+        if (cursor.iterator?.EndReached) {
+          stopCursorLoop(false);
+          return;
+        }
+        cursor.next();
+        updateExpectedFromCursor();
+      }, stepMs);
+    }
+ */
+function startCursorLoop(bpm, resetPosition = true) {
+  const osmd = renderer.osmd;
+  if (!osmd?.cursor) return;
+
+  cursor = osmd.cursor;
+  stopCursorLoop(false);
+
+  const clampedBpm = clampBpm(bpm);
+  const beatMs = 60000 / clampedBpm; // Dauer einer Viertelnote in ms
+
+  cursor.show();
+  if (resetPosition) {
+    cursor.reset();
+  }
+
+  // Style cursor element and inner bar
+  const cursorEl = cursor.cursorElement;
+  if (cursorEl) {
+    cursorEl.style.transition =
+      "left 120ms linear, top 120ms linear, height 120ms linear";
+    cursorEl.style.stroke = "red";
+    cursorEl.style.strokeWidth = "2px";
+    cursorEl.style.opacity = "0.8";
+    const rect = cursorEl.querySelector("rect");
+    if (rect) {
+      rect.setAttribute("fill", "red");
+      rect.setAttribute("width", "3");
+      rect.setAttribute("rx", "2");
+      rect.setAttribute("opacity", "0.9");
+    }
+  }
+
+  /**
+   * Ermittelt aus der aktuellen Cursor-Position die Dauer
+   * (in Millisekunden), die wir warten sollen, bevor wir
+   * zum nächsten Cursor-Schritt gehen.
+   *
+   * Idee: wir nehmen die KÜRZESTE Notenlänge aller aktuellen Notes
+   * (in ganzen Noten, z.B. 0.25 für eine Viertel) und rechnen sie
+   * in Viertelnoten und dann in ms um.
+   */
+  function getCurrentStepDurationMs() {
+    const iterator = cursor.iterator;
+    if (!iterator) return 0;
+
+    // Versuche, aktuelle VoiceEntries zu holen (je nach OSMD-Version
+    // kann das currentVoiceEntries oder CurrentVoiceEntries heißen)
+    const voiceEntries =
+      iterator.currentVoiceEntries ||
+      iterator.CurrentVoiceEntries ||
+      [];
+
+    let minWhole = Number.POSITIVE_INFINITY;
+
+    for (const ve of voiceEntries) {
+      if (!ve?.notes) continue;
+      for (const note of ve.notes) {
+        // Note.Length ist eine Fraction, wir nehmen RealValue
+        const len =
+          note?.Length?.RealValue ??
+          note?.Length?.realValue ??
+          0;
+        if (len > 0 && len < minWhole) {
+          minWhole = len;
+        }
+      }
+    }
+
+    // Falls wir keine Note gefunden haben (z.B. nur Taktstrich o.ä.),
+    // nehmen wir einfach eine Achtel als Fallback.
+    if (!isFinite(minWhole)) {
+      const fallbackDeltaQuarters = 0.5; // Achtel = 0.5 Viertelnoten
+      return fallbackDeltaQuarters * beatMs;
+    }
+
+    // minWhole ist ein Bruchteil einer GANZEN Note.
+    // Ganze Note = 4 Viertel → * 4, um auf Viertelnoten zu kommen.
+    const deltaQuarters = minWhole * 4;
+    const stepMs = deltaQuarters * beatMs;
+
+    return stepMs;
+  }
+
+  function scheduleNextStep() {
+    const iterator = cursor.iterator;
+    if (!iterator || iterator.endReached) {
+      stopCursorLoop(false);
+      showEndScreen();
+      return;
+    }
+
+    // Update expected note based on current cursor position
+    updateExpectedFromCursor();
+
+    const stepMs = getCurrentStepDurationMs();
+
+    // Sicherheitsnetz: wenn stepMs <= 0 rauskommt, direkt weiterspringen,
+    // damit wir nicht hängen bleiben.
+    if (stepMs <= 0) {
+      cursor.next();
+      if (!cursor.iterator?.endReached) {
+        scheduleNextStep();
+      } else {
+        stopCursorLoop(false);
+      }
+      return;
+    }
+
+    cursorIntervalId = window.setTimeout(() => {
+      // Beim Ablauf des Timers EINEN Schritt weiter
+      cursor.next();
+
+      if (!cursor.iterator?.endReached) {
+        scheduleNextStep();
+      } else {
+        stopCursorLoop(false);
+        showEndScreen();
+      }
+    }, stepMs);
+  }
+
+  // Cursor steht nach reset() bereits auf der ersten Note:
+  scheduleNextStep();
+}
+
+
+
+
+    async function loadScoreBuffer() {
+      const selectedPath = scoreSelect?.value || SCORE_FILES[0].path;
+      const resp = await fetch(selectedPath);
+      if (!resp.ok) {
+        throw new Error(`Konnte Score nicht laden (${resp.status})`);
+      }
+      return await resp.arrayBuffer();
+    }
+
+    async function decodeMxlToXml(buffer) {
+      const zip = await window.JSZip.loadAsync(buffer);
+
+      let xmlPath = null;
+      const allFiles = Object.keys(zip.files || {}).filter(
+        (f) => typeof f === "string"
+      );
+
+      if (zip.file("META-INF/container.xml")) {
+        const containerText = await zip
+          .file("META-INF/container.xml")
+          .async("text");
+        const match = containerText.match(/full-path="([^"]+)"/);
+        if (match) xmlPath = match[1];
+      }
+
+      if (!xmlPath) {
+        const xmlFiles = allFiles.filter(
+          (f) =>
+            f.toLowerCase().endsWith(".xml") &&
+            !f.toLowerCase().includes("container")
+        );
+        xmlPath = xmlFiles[0];
+      }
+
+      if (!xmlPath || typeof xmlPath !== "string" || !zip.file(xmlPath)) {
+        throw new Error("Kein XML in MXL gefunden");
+      }
+
+      return await zip.file(xmlPath).async("text");
+    }
+
+    function updateExpectedLabel(note) {
+      if (!note) {
+        statusExpected.textContent = "Expected: –";
+        return;
+      }
+      if (note.isRest) {
+        statusExpected.textContent = "Expected: Rest";
+        return;
+      }
+      statusExpected.textContent = `Expected: ${note.noteName}${note.octave} (MIDI ${note.midi})`;
+    }
+
+    function updateDetectedLabel(info) {
+      if (!info || info.skipped || !info.midi) {
+        statusDetected.textContent = "Detected: –";
+      } else {
+        statusDetected.textContent = `Detected: ${info.note} (${info.midi})`;
+      }
+
+      statusLevel.textContent = `Level: rms ${
+        info?.rms?.toFixed?.(3) ?? "–"
+      }, clarity ${info?.clarity?.toFixed?.(2) ?? "–"}`;
+    }
+
+    function handlePitch(info) {
+      updateDetectedLabel(info);
+
+      if (!currentExpected || currentExpected.isRest || info.skipped || !info.midi) return;
+
+      const midiDiff = Math.abs(info.midi - currentExpected.midi);
+      const isCorrect = midiDiff <= 0.5; // allow slight detune (~50 cents)
+      if (!currentExpected.hit && isCorrect) {
+        correctNotes += 1;
+        currentExpected.hit = true;
+      }
+      renderMarker(currentExpected, isCorrect);
+    }
+
+    async function startApp() {
+      clearError();
+      startBtn.disabled = true;
+      pauseBtn.disabled = false;
+      stopBtn.disabled = false;
+      startScreen.style.display = "none";
+      scoreShell.style.display = "flex";
+      pauseOverlay.style.display = "none";
+      endScreen.style.display = "none";
+      totalNotes = 0;
+      correctNotes = 0;
+
+      if (scoreSelect?.value) {
+        selectedScorePath = scoreSelect.value;
+      }
+
+      const bpm = clampBpm(Number(bpmInput.value));
+      bpmInput.value = bpm;
+
+      await renderer.init();
+
+      const demoBuffer = await loadScoreBuffer();
+      let xmlString = null;
+
+      try {
+        xmlString = await decodeMxlToXml(demoBuffer);
+      } catch (e) {
+        log(
+          `MXL-Decode-Fehler, versuche OSMD-Load direkt: ${e.message}`
+        );
+      }
+      // German note naming: only replace lyrics/text words B -> H
+      const xmlForLoad =
+        typeof xmlString === "string"
+          ? xmlString.replace(/(<words>)B(<\/words>)/gi, "$1H$2")
+          : null;
+
+      try {
+        await renderer.loadAndRender(xmlForLoad || demoBuffer);
+        annotateNoteNames(renderer.osmd);
+      } catch (err) {
+        showError(`OSMD-Ladefehler: ${err.message}`);
+        startBtn.disabled = false;
+        pauseBtn.disabled = true;
+        stopBtn.disabled = true;
+        startScreen.style.display = "flex";
+        scoreShell.style.display = "none";
+        return;
+      }
+
+      audioEngine = new AudioEngine(handlePitch);
+
+      try {
+        await audioEngine.start();
+      } catch (err) {
+        showError(`Mikrofonfehler: ${err.message}`);
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        return;
+      }
+
+      startCursorLoop(bpm, true);
+      isPaused = false;
+      pauseBtn.textContent = "Pause";
+      log("App started.");
+
+      // Keyboard debug input (A/S/D/F as C4/D4/E4/F4)
+      window.onkeydown = (e) => {
+        if (!currentExpected) return;
+
+        const keyMap = {
+          a: { step: "C", octave: 4 },
+          s: { step: "D", octave: 4 },
+          d: { step: "E", octave: 4 },
+          f: { step: "F", octave: 4 },
+        };
+
+        const m = keyMap[e.key.toLowerCase()];
+        if (!m) return;
+
+        const midi = noteNameToMidi(m.step, m.octave);
+        const now =
+          audioEngine?.getCurrentTime() ?? performance.now() / 1000;
+
+        handlePitch({
+          time: now,
+          midi,
+          note: `${m.step}${m.octave}`,
+          rms: 0,
+          clarity: 1,
+        });
+      };
+    }
+
+    function stopApp() {
+      stopBtn.disabled = true;
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = "Pause";
+      isPaused = false;
+      startBtn.disabled = false;
+      startScreen.style.display = "flex";
+      scoreShell.style.display = "none";
+      pauseOverlay.style.display = "none";
+      endScreen.style.display = "none";
+      totalNotes = 0;
+      correctNotes = 0;
+
+      stopCursorLoop();
+      audioEngine?.stop();
+
+      updateDetectedLabel(null);
+      updateExpectedLabel(null);
+
+      log("App stopped.");
+    }
+
+    startBtn.addEventListener("click", startApp);
+    stopBtn.addEventListener("click", stopApp);
+    pauseBtn.addEventListener("click", () => {
+      if (!audioEngine) return;
+      if (!isPaused) {
+        enterPauseOverlay();
+      } else {
+        exitPauseOverlay();
+      }
+    });
+
+    populateScoreSelect();
+    scoreSelect?.addEventListener("change", () => {
+      selectedScorePath = scoreSelect.value;
+    });
+
+    scoreShell.addEventListener("click", () => {
+      if (!audioEngine || isPaused || scoreShell.style.display === "none") return;
+      enterPauseOverlay();
+    });
+
+    resumeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      exitPauseOverlay();
+    });
+
+    backBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      stopApp();
+    });
+
+    endBackBtn.addEventListener("click", () => {
+      stopApp();
+      startScreen.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    endRepeatBtn.addEventListener("click", () => {
+      endScreen.style.display = "none";
+      startApp();
+    });
+  </script>
+</body>
+</html>
