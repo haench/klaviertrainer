@@ -497,7 +497,12 @@
           drawCredits: false,
           engravingFontFamily: "Bravura",
           drawPartNames: false,
-          //renderSingleHorizontalStaffline: true,
+          renderSingleHorizontalStaffline: false,
+          engravingRules: {
+            FixedMeasureWidth: true,
+            // optional: Pickup-Takte (Auftakte) auch gleich breit machen:
+            FixedMeasureWidthUseForPickupMeasures: true
+          }
         };
 
         this.osmd = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(
@@ -508,13 +513,15 @@
       }
 
       async loadAndRender(xmlOrBuf) {
+
         await this.osmd.load(xmlOrBuf);
         
         // Ensure music fonts are loaded before rendering
         if (document.fonts?.ready) {
           await document.fonts.ready;
         }
-
+        // WICHTIG: vor render() aufrufen
+        
     //    await this.osmd.render();
       
 /*         this.svg = this.container.querySelector("svg");
@@ -581,7 +588,7 @@
         this.startCtxTime = 0;
         this.pauseCtxTime = null;
         this.MIN_RMS = 0.012; // slightly higher to ignore background noise
-        this.MIN_CLARITY = 0.7; // require clearer pitch to avoid double triggers
+        this.MIN_CLARITY = 0.9; // require clearer pitch to avoid double triggers
         this.lastEvalTime = 0;
         this.evalInterval = 0.2; // 0.08 seconds
         this.loopId = null;
@@ -757,6 +764,7 @@
     let measureBeatTypes = [];
     let lastDetectedMidi = null;
     let lastDetectedTime = 0;
+    let currentStepDurationMs = 80;
 
     function clampBpm(val) {
       return Math.max(40, Math.min(200, val || 90));
@@ -1102,6 +1110,11 @@ function startCursorLoop(bpm, resetPosition = true) {
 
     const stepMs = getCurrentStepDurationMs();
     ensureCursorVisibleSmooth(stepMs);
+    currentStepDurationMs = stepMs;
+    const evalSeconds = Math.min(0.2, Math.max(0.03, stepMs / 2000));
+    if (audioEngine) {
+      audioEngine.evalInterval = evalSeconds;
+    }
 
     // Sicherheitsnetz: wenn stepMs <= 0 rauskommt, direkt weiterspringen,
     // damit wir nicht hängen bleiben.
@@ -1205,6 +1218,14 @@ function startCursorLoop(bpm, resetPosition = true) {
       updateDetectedLabel(info);
 
       if (!currentExpected || currentExpected.isRest || info.skipped || !info.midi) return;
+
+      log(
+        `Pitch detected: ${info.note} (${info.midi}), freq ${
+          info.freq?.toFixed?.(2) ?? "?"
+        } Hz, rms ${info.rms?.toFixed?.(3) ?? "?"}, clarity ${
+          info.clarity?.toFixed?.(2) ?? "?"
+        }`
+      );
 
       const now = info?.time ?? performance.now() / 1000;
       if (
