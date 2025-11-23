@@ -1265,7 +1265,7 @@ function startCursorLoop(bpm, resetPosition = true) {
 
       try {
         await renderer.loadAndRender(xmlForLoad || demoBuffer);
-        annotateNoteNames(renderer.osmd);
+        //annotateNoteNames(renderer.osmd);
         const measures = renderer.osmd?.sheet?.SourceMeasures ?? [];
         measureBeatTypes = measures.map((m) => m?.ActiveTimeSignature?.Denominator ?? 4);
       } catch (err) {
