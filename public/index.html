@@ -481,7 +481,7 @@
         const wrapperHeight = wrapper.clientHeight;
         console.log(wrapperHeight);
         // 3. Zoom-Faktor berechnen (kleinen Rand lassen, z. B. 95%)
-        const targetZoom = (wrapperHeight / contentHeight) * 0.95;
+        const targetZoom = 1; //(wrapperHeight / contentHeight) * 0.95;
 
         // 4. Zoom setzen und nochmal rendern
         this.osmd.Zoom = targetZoom;
