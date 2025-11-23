@@ -351,7 +351,19 @@
   </div>
 
 <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
     import { PitchDetector } from "https://esm.sh/pitchy@4";
+
+    // Firebase Hosting bootstrap (no products used yet, but required for Firebase envs)
+    const firebaseConfig = {
+      apiKey: "AIzaSyC8RmFmN2g34IaORkMWwR7Cy7jFOXSFzcM",
+      authDomain: "klaviertrainer.firebaseapp.com",
+      projectId: "klaviertrainer",
+      storageBucket: "klaviertrainer.firebasestorage.app",
+      messagingSenderId: "392923719384",
+      appId: "1:392923719384:web:c0ca13b94f9d5040ba59ad",
+    };
+    const firebaseApp = initializeApp(firebaseConfig);
 
     // --- Utilities ---
     function log(msg) {
